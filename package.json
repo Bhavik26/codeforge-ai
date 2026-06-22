@@ -1,0 +1,25 @@
+{
+  "name": "codeforge-ai",
+  "version": "1.0.0",
+  "description": "CodeForge AI - Competitive Programming Platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "dev:backend": "npm run dev -w apps/backend",
+    "dev:frontend": "npm run dev -w apps/frontend",
+    "build": "npm run build --workspaces",
+    "start": "npm run start -w apps/backend",
+    "seed": "npm run seed -w apps/backend",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "format": "npm run format --workspaces"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}

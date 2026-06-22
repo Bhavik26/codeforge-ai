@@ -1,0 +1,801 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USER & AUTHENTICATION MODELS
+// ============================================================================
+
+model User {
+  id                    String   @id @default(cuid())
+  email                 String   @unique
+  username              String   @unique
+  passwordHash          String
+  firstName             String?
+  lastName              String?
+  avatarUrl             String?
+  bio                   String?
+  
+  // Account Details
+  isEmailVerified       Boolean  @default(false)
+  isBanned              Boolean  @default(false)
+  banReason             String?
+  role                  UserRole @default(USER)
+  
+  // Ratings & Statistics
+  rating                Int      @default(1200)
+  ratingHistory         Json     @default("[]")  // Array of rating changes with timestamps
+  totalSubmissions      Int      @default(0)
+  acceptedSubmissions   Int      @default(0)
+  
+  // OAuth Integration
+  googleId              String?  @unique
+  googleEmail           String?
+  
+  // Relationships
+  submissions           Submission[]
+  codeReviews          CodeReview[]
+  interviews           MockInterview[]
+  recommendations      UserRecommendation[]
+  userStats            UserStats?
+  leaderboardEntries   Leaderboard[]
+  contestParticipations ContestParticipation[]
+  skillGraph            UserSkillGraph?
+  preferenceEmbedding   UserPreferenceEmbedding?
+  learningPath          LearningPath?
+  contestAnalytics      ContestAnalytics[] @relation("ContestAnalytics")
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  @@index([email])
+  @@index([username])
+  @@index([rating])
+  @@index([createdAt])
+}
+
+model UserStats {
+  id                          String   @id @default(cuid())
+  userId                      String   @unique
+  user                        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Problem Statistics
+  totalProblemsAttempted      Int      @default(0)
+  totalProblemsSolved         Int      @default(0)
+  problemsSolvedByDifficulty  Json     @default("{\"EASY\": 0, \"MEDIUM\": 0, \"HARD\": 0}")
+  problemsSolvedByTag         Json     @default("{}")  // tag -> count
+  
+  // Contest Statistics
+  contestsParticipated        Int      @default(0)
+  contestsWon                 Int      @default(0)
+  totalContestPoints          Int      @default(0)
+  bestContestRank             Int?
+  averageContestRank          Float?
+  
+  // Time Statistics
+  totalCodingTime             Int      @default(0)  // in minutes
+  averageSubmissionTime       Float?   // in seconds
+  
+  // Code Quality Metrics
+  averageCodeScore            Float?   // 0-100
+  averageCodeComplexity       Float?   // Cyclomatic complexity
+  
+  // Interview Statistics
+  mockInterviewsCompleted     Int      @default(0)
+  averageInterviewScore       Float?   // 0-100
+  
+  // Streak Information
+  currentStreak               Int      @default(0)
+  longestStreak               Int      @default(0)
+  lastActivityDate            DateTime @default(now())
+  
+  updatedAt                   DateTime @updatedAt
+  
+  @@index([userId])
+}
+
+// ============================================================================
+// PROBLEM MODELS
+// ============================================================================
+
+model Problem {
+  id                String   @id @default(cuid())
+  title             String
+  slug              String   @unique
+  description       String   @db.Text
+  difficulty        Difficulty
+  tags              String[]
+  timeLimit         Int      @default(1)       // in seconds
+  memoryLimit       Int      @default(256)     // in MB
+  
+  // Problem Content
+  editorial         String?  @db.Text
+  exampleInput      String?  @db.Text
+  exampleOutput     String?  @db.Text
+  
+  // Statistics
+  totalSubmissions  Int      @default(0)
+  acceptedCount     Int      @default(0)
+  averageScore      Float?
+  successRate       Float?   @default(0)       // percentage
+  
+  // Metadata
+  isPublished       Boolean  @default(false)
+  isPremium         Boolean  @default(false)
+  views             Int      @default(0)
+  
+  // Relationships
+  submissions       Submission[]
+  testCases         TestCase[]
+  contestProblems   ContestProblem[]
+  interviews        MockInterview[]
+  recommendations   UserRecommendation[]
+  interviewQuestions InterviewQuestion[] @relation("InterviewQuestionToProblem")
+  learningPathNodes LearningPathNode[] @relation("LearningPathNode")
+  embedding         ProblemEmbedding?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([difficulty])
+  @@index([isPublished])
+  @@index([tags])
+  @@index([createdAt])
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model TestCase {
+  id                String   @id @default(cuid())
+  problemId         String
+  problem           Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  
+  input             String   @db.Text
+  expectedOutput    String   @db.Text
+  explanation       String?  @db.Text
+  
+  isHidden          Boolean  @default(false)  // Hidden test cases
+  isExample         Boolean  @default(false)  // Example test case
+  
+  submissionResults SubmissionResult[]
+  
+  createdAt         DateTime @default(now())
+  
+  @@index([problemId])
+}
+
+// ============================================================================
+// SUBMISSION MODELS
+// ============================================================================
+
+model Submission {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId         String
+  problem           Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  
+  // Code Details
+  code              String   @db.Text
+  language          String   // "cpp", "python", "javascript", "java", etc.
+  
+  // Execution Results
+  status            SubmissionStatus @default(PENDING)
+  verdict           SubmissionVerdict @default(PENDING)
+  
+  // Error Information
+  compilationError  String?  @db.Text
+  runtimeError      String?  @db.Text
+  
+  // Performance Metrics
+  executionTime     Int?     // in milliseconds
+  memoryUsed        Int?     // in KB
+  score             Int?     // 0-100
+  
+  // Test Case Results
+  totalTestCases    Int      @default(0)
+  passedTestCases   Int      @default(0)
+  
+  // Related Data
+  codeReview        CodeReview?
+  results           SubmissionResult[]
+  contestSubmission ContestSubmission?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([problemId])
+  @@index([status])
+  @@index([verdict])
+  @@index([createdAt])
+  @@unique([userId, problemId]) // Latest submission unique per user per problem
+}
+
+enum SubmissionStatus {
+  PENDING
+  COMPILING
+  EXECUTING
+  COMPLETED
+  FAILED
+}
+
+enum SubmissionVerdict {
+  PENDING
+  COMPILATION_ERROR
+  RUNTIME_ERROR
+  TIME_LIMIT_EXCEEDED
+  MEMORY_LIMIT_EXCEEDED
+  WRONG_ANSWER
+  ACCEPTED
+  PARTIAL
+}
+
+model SubmissionResult {
+  id                String   @id @default(cuid())
+  submissionId      String
+  submission        Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  testCaseId        String
+  testCase          TestCase @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+  
+  status            TestCaseStatus
+  expectedOutput    String   @db.Text
+  actualOutput      String   @db.Text
+  executionTime     Int?     // in milliseconds
+  memoryUsed        Int?     // in KB
+  errorMessage      String?
+  
+  createdAt         DateTime @default(now())
+  
+  @@index([submissionId])
+  @@index([testCaseId])
+}
+
+enum TestCaseStatus {
+  PASSED
+  FAILED
+  TIME_LIMIT_EXCEEDED
+  MEMORY_LIMIT_EXCEEDED
+  RUNTIME_ERROR
+  COMPILATION_ERROR
+}
+
+// ============================================================================
+// CONTEST MODELS
+// ============================================================================
+
+model Contest {
+  id                String   @id @default(cuid())
+  title             String
+  slug              String   @unique
+  description       String?  @db.Text
+  
+  // Contest Timing
+  startTime         DateTime
+  endTime           DateTime
+  registrationStart DateTime
+  registrationEnd   DateTime
+  
+  // Contest Details
+  difficulty        Difficulty?
+  maxParticipants   Int?
+  status            ContestStatus @default(UPCOMING)
+  
+  // Scoring
+  totalPoints       Int      @default(0)
+  scoringType       ScoringType @default(POINTS)  // POINTS or TIME_BASED
+  negativeScore     Int      @default(0)          // for wrong submissions
+  
+  // Relationships
+  problems          ContestProblem[]
+  participants      ContestParticipation[]
+  submissions       ContestSubmission[]
+  leaderboards      Leaderboard[]
+  analytics         ContestAnalytics[]
+
+  isPublished       Boolean  @default(false)
+  isPremium         Boolean  @default(false)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([status])
+  @@index([startTime])
+  @@index([createdAt])
+}
+
+enum ContestStatus {
+  UPCOMING
+  ONGOING
+  ENDED
+  CANCELLED
+}
+
+enum ScoringType {
+  POINTS
+  TIME_BASED
+  ACM_ICPC
+}
+
+model ContestProblem {
+  id                String   @id @default(cuid())
+  contestId         String
+  contest           Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  problemId         String
+  problem           Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  
+  points            Int      @default(100)
+  orderIndex        Int                        // Problem order in contest (A, B, C, etc.)
+  
+  createdAt         DateTime @default(now())
+  
+  @@unique([contestId, problemId])
+  @@index([contestId])
+  @@index([problemId])
+}
+
+model ContestParticipation {
+  id                String   @id @default(cuid())
+  contestId         String
+  contest           Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  registeredAt      DateTime @default(now())
+  startedAt         DateTime?
+  endedAt           DateTime?
+  
+  @@unique([contestId, userId])
+  @@index([contestId])
+  @@index([userId])
+}
+
+model ContestSubmission {
+  id                String   @id @default(cuid())
+  contestId         String
+  contest           Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  submissionId      String   @unique
+  submission        Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  
+  points            Int      @default(0)
+  submittedAt       DateTime @default(now())
+  
+  @@index([contestId])
+  @@index([submissionId])
+}
+
+model Leaderboard {
+  id                String   @id @default(cuid())
+  contestId         String
+  contest           Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  rank              Int
+  score             Int      @default(0)
+  timeTaken         Int?     // in minutes
+  solvedCount       Int      @default(0)
+  lastSubmissionTime DateTime?
+  
+  updatedAt         DateTime @updatedAt
+  
+  @@unique([contestId, userId])
+  @@index([contestId])
+  @@index([userId])
+  @@index([rank])
+}
+
+// ============================================================================
+// CODE REVIEW MODELS
+// ============================================================================
+
+model CodeReview {
+  id                String   @id @default(cuid())
+  submissionId      String   @unique
+  submission        Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Review Type
+  reviewType        ReviewType @default(AI)
+  reviewedBy        String?    // Reviewer user ID if HUMAN
+
+  // Review Content
+  overallScore      Int        // 0-100
+  feedback          String     @db.Text
+  improvements      String[]
+
+  // Code Metrics
+  readabilityScore  Int?       // 0-100
+  efficiencyScore   Int?       // 0-100
+  maintenabilityScore Int?     // 0-100
+
+  // Analysis Results
+  complexityAnalysis Json      @default("{}")
+  codeSmells        String[]
+  suggestions       Json       @default("[]")  // Array of {line, type, suggestion}
+
+  // AI Analysis Details
+  analysis          CodeReviewAnalysis?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([submissionId])
+  @@index([userId])
+  @@index([reviewType])
+  @@index([createdAt])
+}
+
+enum ReviewType {
+  AI
+  HUMAN
+}
+
+// ============================================================================
+// INTERVIEW MODELS
+// ============================================================================
+
+model MockInterview {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId         String
+  problem           Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  // Interview Details
+  difficultyLevel   Difficulty
+  duration          Int      @default(45)     // in minutes
+  status            InterviewStatus @default(SCHEDULED)
+
+  // Results
+  score             Int?     // 0-100
+  feedback          String?  @db.Text
+  areasOfImprovement String[]
+
+  // Answers
+  answers           InterviewAnswer[]
+
+  // Timing
+  startedAt         DateTime?
+  completedAt       DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId])
+  @@index([problemId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+// ============================================================================
+// RECOMMENDATION MODELS
+// ============================================================================
+
+model UserRecommendation {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId         String
+  problem           Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  
+  // Recommendation Details
+  reason            String   // "SIMILAR_TAGS", "DIFFICULTY_PROGRESSION", "TRENDING", etc.
+  similarityScore   Float    // 0-1
+  predictedDifficulty Difficulty?
+  
+  // Meta
+  isViewed          Boolean  @default(false)
+  isAttempted       Boolean  @default(false)
+  
+  createdAt         DateTime @default(now())
+  viewedAt          DateTime?
+  
+  @@unique([userId, problemId])
+  @@index([userId])
+  @@index([problemId])
+  @@index([createdAt])
+}
+
+model LearningPath {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Path Details
+  currentLevel      Difficulty @default(EASY)
+  nextRecommendedProblems String[]  // Problem IDs
+  completedMilestones String[]
+
+  // Progress
+  totalProgress     Int      @default(0)     // 0-100
+  estimatedTimeToCompletion Int?            // in hours
+
+  // Path nodes
+  nodes             LearningPathNode[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ============================================================================
+// AI REVIEW & INTERVIEW MODELS
+// ============================================================================
+
+model CodeReviewAnalysis {
+  id                    String   @id @default(cuid())
+  codeReviewId          String   @unique
+  codeReview            CodeReview @relation(fields: [codeReviewId], references: [id], onDelete: Cascade)
+
+  // Time Complexity
+  timeComplexity        String   // e.g., "O(n log n)"
+  timeComplexityExplanation String @db.Text
+
+  // Space Complexity
+  spaceComplexity       String   // e.g., "O(n)"
+  spaceComplexityExplanation String @db.Text
+
+  // Optimization Suggestions
+  optimizations         Json     @default("[]")  // Array of {suggestion, impact, priority}
+
+  // Bug Detection
+  bugs                  Json     @default("[]")  // Array of {type, description, line, severity}
+
+  // Code Quality
+  readabilityScore      Int      // 0-100
+  efficiencyScore       Int      // 0-100
+  maintenabilityScore   Int      // 0-100
+  overallScore          Int      // 0-100
+
+  // AI Generated Content
+  summary               String   @db.Text
+  keyTakeaways          String[]
+
+  generatedAt           DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([codeReviewId])
+}
+
+model InterviewQuestion {
+  id                    String   @id @default(cuid())
+  topic                 String
+  difficulty            Difficulty
+  problemId             String?
+  problem               Problem? @relation("InterviewQuestionToProblem", fields: [problemId], references: [id], onDelete: SetNull)
+
+  question              String   @db.Text
+  expectedApproach      String   @db.Text
+  timeLimit             Int      // in seconds
+
+  tags                  String[]
+
+  answers               InterviewAnswer[]
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([topic])
+  @@index([difficulty])
+  @@index([problemId])
+}
+
+model InterviewAnswer {
+  id                    String   @id @default(cuid())
+  interviewSessionId    String
+  interviewSession      MockInterview @relation(fields: [interviewSessionId], references: [id], onDelete: Cascade)
+
+  questionId            String
+  question              InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  userAnswer            String   @db.Text
+
+  // Evaluation
+  isCorrect             Boolean
+  score                 Int      // 0-100
+  feedback              String   @db.Text
+  timeSpent             Int      // in seconds
+
+  // AI Analysis
+  codeQuality           Int?     // 0-100
+  algorithmicThinking   Int?     // 0-100
+  communication         Int?     // 0-100
+  areasForImprovement   String[]
+
+  createdAt             DateTime @default(now())
+
+  @@index([interviewSessionId])
+  @@index([questionId])
+}
+
+// ============================================================================
+// SKILL & LEARNING PATH MODELS
+// ============================================================================
+
+model UserSkillGraph {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Skill nodes (JSON for flexibility)
+  skillNodes            Json     @default("[]")  // Array of {skillId, name, proficiency 0-100, lastUpdated}
+
+  // Weak areas
+  weakTopics            String[] @default([])
+
+  // Strong areas
+  strongTopics          String[] @default([])
+
+  // Estimated time to improve weak areas (in hours)
+  improvementEstimate   Int      @default(0)
+
+  updatedAt             DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model LearningPathNode {
+  id                    String   @id @default(cuid())
+  learningPathId        String
+  learningPath          LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
+
+  problemId             String
+  problem               Problem  @relation("LearningPathNode", fields: [problemId], references: [id], onDelete: Cascade)
+
+  sequenceIndex         Int
+  isCompleted           Boolean  @default(false)
+  completedAt           DateTime?
+
+  @@unique([learningPathId, problemId])
+  @@index([learningPathId])
+  @@index([problemId])
+  @@index([isCompleted])
+}
+
+model ContestAnalytics {
+  id                    String   @id @default(cuid())
+  contestId             String
+  contest               Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  userId                String
+  user                  User     @relation("ContestAnalytics", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Performance Metrics
+  finalRank             Int
+  finalScore            Int
+  problemsSolved        Int
+  wrongSubmissions      Int
+  totalAttempts         Int
+
+  // Time Analytics
+  firstAcceptTime       Int?     // minutes from start
+  averageProblemTime    Float?   // minutes
+
+  // Problem-wise analytics
+  problemAnalytics      Json     // {problemId: {attempts, time, verdict}}
+
+  // Strengths and Weaknesses
+  strengths             String[]
+  weaknesses            String[]
+
+  // Recommendations
+  recommendations       String[]
+
+  analyzedAt            DateTime @default(now())
+
+  @@unique([contestId, userId])
+  @@index([contestId])
+  @@index([userId])
+}
+
+// ============================================================================
+// VECTOR EMBEDDING MODELS
+// ============================================================================
+
+model ProblemEmbedding {
+  id                    String   @id @default(cuid())
+  problemId             String   @unique
+  problem               Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  // Vector embedding (standard float array)
+  embedding             Float[]
+
+  // Metadata for quick access
+  difficulty            Difficulty
+  tags                  String[]
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([problemId])
+}
+
+model UserPreferenceEmbedding {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // User preference vector based on solved problems
+  embedding             Float[]
+
+  // Last updated when
+  lastUpdated           DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ============================================================================
+// ROLE MODELS
+// ============================================================================
+
+enum UserRole {
+  USER
+  MODERATOR
+  ADMIN
+  PROBLEM_SETTER
+}
+
+// ============================================================================
+// ADMIN & SYSTEM MODELS
+// ============================================================================
+
+model SystemAuditLog {
+  id                String   @id @default(cuid())
+  action            String
+  entityType        String   // "USER", "PROBLEM", "SUBMISSION", etc.
+  entityId          String
+  
+  changes           Json     // {field: {before, after}}
+  performedBy       String?  // Admin user ID
+  
+  createdAt         DateTime @default(now())
+  
+  @@index([entityType])
+  @@index([entityId])
+  @@index([createdAt])
+}
+
+model JudgeWorkerStatus {
+  id                String   @id @default(cuid())
+  workerId          String   @unique
+  
+  // Health Status
+  status            String   @default("HEALTHY")  // HEALTHY, UNHEALTHY, BUSY
+  lastHeartbeat     DateTime @default(now())
+  cpuUsage          Float    @default(0)
+  memoryUsage       Float    @default(0)
+  
+  // Queue Status
+  jobsProcessed     Int      @default(0)
+  failedJobs        Int      @default(0)
+  averageJobTime    Float    @default(0)
+  
+  // Assignment
+  maxConcurrentJobs Int      @default(5)
+  currentJobCount   Int      @default(0)
+  
+  updatedAt         DateTime @updatedAt
+  
+  @@index([status])
+}
