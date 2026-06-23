@@ -47,17 +47,17 @@ export const config = {
 
   // JWT
   jwt: {
-    accessTokenSecret: getEnvVar('JWT_ACCESS_TOKEN_SECRET'),
-    refreshTokenSecret: getEnvVar('JWT_REFRESH_TOKEN_SECRET'),
+    accessTokenSecret: getEnvVar('JWT_ACCESS_TOKEN_SECRET', 'codeforge-dev-access-secret-key-change-in-production'),
+    refreshTokenSecret: getEnvVar('JWT_REFRESH_TOKEN_SECRET', 'codeforge-dev-refresh-secret-key-change-in-production'),
     accessTokenExpiry: getEnvVar('JWT_ACCESS_TOKEN_EXPIRY', '15m'),
     refreshTokenExpiry: getEnvVar('JWT_REFRESH_TOKEN_EXPIRY', '7d'),
   },
 
   // OAuth
   oauth: {
-    googleClientId: getEnvVar('GOOGLE_CLIENT_ID'),
-    googleClientSecret: getEnvVar('GOOGLE_CLIENT_SECRET'),
-    googleCallbackUrl: getEnvVar('GOOGLE_CALLBACK_URL'),
+    googleClientId: getEnvVar('GOOGLE_CLIENT_ID', 'dummy-client-id-for-development'),
+    googleClientSecret: getEnvVar('GOOGLE_CLIENT_SECRET', 'dummy-client-secret-for-development'),
+    googleCallbackUrl: getEnvVar('GOOGLE_CALLBACK_URL', 'http://localhost:3001/api/v1/auth/google/callback'),
   },
 
   // CORS
@@ -74,12 +74,12 @@ export const config = {
 
   // AI Services
   ai: {
-    openaiApiKey: getEnvVar('OPENAI_API_KEY'),
+    openaiApiKey: getEnvVar('OPENAI_API_KEY', 'sk-dummy-key-for-development'),
     openaiModel: getEnvVar('OPENAI_MODEL', 'gpt-4'),
     openaiEmbeddingModel: getEnvVar('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small'),
-    enableAiReviews: getEnvVar('ENABLE_AI_REVIEWS', 'true') === 'true',
-    enableAiInterview: getEnvVar('ENABLE_AI_INTERVIEW', 'true') === 'true',
-    enableRecommendations: getEnvVar('ENABLE_RECOMMENDATIONS', 'true') === 'true',
+    enableAiReviews: getEnvVar('ENABLE_AI_REVIEWS', 'false') === 'true',
+    enableAiInterview: getEnvVar('ENABLE_AI_INTERVIEW', 'false') === 'true',
+    enableRecommendations: getEnvVar('ENABLE_RECOMMENDATIONS', 'false') === 'true',
   },
 
   // Email
