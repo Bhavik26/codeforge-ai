@@ -14,7 +14,9 @@ const redisConfig = {
   maxRetriesPerRequest: null,
 };
 
-export const redis = new Redis(redisConfig);
+export const redis = process.env.REDIS_URL
+  ? new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: null, retryStrategy: redisConfig.retryStrategy })
+  : new Redis(redisConfig);
 
 redis.on('connect', () => {
   logger.info('Redis connected');
@@ -29,7 +31,9 @@ redis.on('close', () => {
 });
 
 export const createRedisClient = (): Redis => {
-  return new Redis(redisConfig);
+  return process.env.REDIS_URL
+    ? new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: null, retryStrategy: redisConfig.retryStrategy })
+    : new Redis(redisConfig);
 };
 
 export default redis;
